@@ -3,11 +3,76 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-   <!--<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@500&display=swap" rel="stylesheet">-->
+  <!--<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@500&display=swap" rel="stylesheet">-->
+  <style>
+    button:hover {
+      cursor: pointer;
+      background-color: #F3F3F3 !important;
+    }
+    .container {
+        width: 100%;
+        max-width: 670px;
+        font-size: 12pt;
+        font-family: sans-serif;
+        font-size: 12pt;
+        margin: 0 auto;
+    }
+    .container h2 {
+      font-weight: bold;
+      margin-top: 50px;
+    }
+    p {
+      line-height: 1.1em;
+    }
+  </style>
   <title>Scrabble Oracle</title>
 </head>
 <body>
   <main id="app"></main>
+  <aside class="container">
+    <h2>Q</h2>
+    <div>
+     <strong>Why do you need my email?</strong>
+     <p>
+      Most web requests finish in under a second so the server can directly respond to the
+      client with whatever data was requested; however, finding the
+      highest scoring word is hard and it takes the server longer to finish than it takes for the
+      connection between server and client to time-out. Therefore I need a
+      different way to get the response data to the user. There are lots of fancy ways to do this
+      but the simplest is to just use email which is what I'm doing.
+     </p>
+    </div>
+    <hr>
+    <div>
+      <strong>How long does it take?</strong>
+      <p>
+        I'm not paying for a designated server so it can take 10-15 seconds for the server
+        to wake up and then 20-30 seconds to find the highest scoring word.
+        I'm using gmail for the last step so overall it's about 45 seconds.
+      </p>
+    </div>
+    <hr>
+    <div>
+      <strong>will my email be stored in a database and/or distributed?</strong>
+      <p>
+        technically gmail has a record of the sent email but other than that, no.
+      </p>
+    </div>
+    <hr>
+    <div>
+      <strong>Can my rack/board have blanks?</strong>
+      <p>
+        Not right now but if enough people request it I might add that features.
+      </p>
+    </div>
+    <hr>
+    <div>
+      <strong>How can I request new features or report a problem?</strong>
+      <p>
+        <a href="https://github.com/jzwood/scrabble-oracle-ui/issues/new">https://github.com/jzwood/scrabble-oracle-ui/issues/new</a>
+      </p>
+    </div>
+  </aside>
   <script src="./index.js"></script>
 </body>
 </html>
