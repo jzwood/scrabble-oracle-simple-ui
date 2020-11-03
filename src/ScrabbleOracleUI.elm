@@ -3,7 +3,7 @@ module ScrabbleOracleUI exposing (..)
 import Browser
 import Html exposing (Html, button, div, text, Attribute, Html, button, div, span, text, ul, li, p, input, hr, h2, h3, h4, strong)
 import Html.Attributes exposing (style, class, tabindex, maxlength, type_)
-import Html.Events exposing (on, preventDefaultOn, onClick, keyCode)
+import Html.Events exposing (on, preventDefaultOn, onClick, keyCode, onInput)
 import List.Extra exposing (getAt, setAt)
 import Json.Decode as Json
 import List
@@ -29,8 +29,11 @@ type Cursor = Cursor (Int, Int)
 
 type alias Model =
   { board : Board
+  , rack : String
   , cursorPos : Cursor
   , direction : Direction
+  , email : String
+  , loading: Bool
   }
 
 baseBoard : List String
@@ -69,8 +72,11 @@ initBoard = Board (List.map (List.map charToTile << String.toList) baseBoard)
 init : Model
 init =
   { board = initBoard
+  , rack = ""
   , cursorPos = Cursor (7, 7)
   , direction = LeftToRight
+  , email = ""
+  , loading = False
   }
 
 -- UPDATE
@@ -81,7 +87,7 @@ onKeyDown letterConstructor =
 alwaysPreventDefault : msg -> (msg, Bool)
 alwaysPreventDefault msg = (msg, True)
 
-type Msg = SetDirection Direction | SetCursor Cursor | SetLetter Int
+type Msg = SetDirection Direction | SetCursor Cursor | SetLetter Int | SetRack String | SetEmail String
 
 updateTile : Char -> Tile -> Tile
 updateTile c (Tile ({ letter, color } as tile)) = Tile { tile | letter = (if c == ' ' then letter else Just c) }
@@ -132,6 +138,8 @@ update msg ({ board, cursorPos, direction } as model) =
             else cursorPos
         }
     SetDirection dir -> { model | direction = dir }
+    SetRack value -> { model | rack = String.toUpper value }
+    SetEmail value -> { model | email = value }
 
 -- VIEW
 
@@ -188,20 +196,21 @@ view ({board, cursorPos, direction} as model) =
                           , style "justify-content" "space-between"
                           , style "align-items" "center"
                           , style "flex-wrap" "wrap"
-                          ] [ div [ style "margin-right" "15px" ]  [ span [] [ "RACK: " |> text ]
-                                    , input [ style "font-size" "16pt"
-                                      , style "margin" "7px 0"
-                                      , style "width" "13ch"
-                                      , type_ "text"
-                                      , maxlength 7
-                                      ] []
-                                    ]
-                           , div [] [ span [ style "margin-right" "10px" ] [ "DIRECTION:" |> text ]
-                                    , button [ style "background-color" "transparent"
+                          ] [ span [] [ "RACK: " |> text ]
+                                    , input [ onInput SetRack
+                                            , style "flex-grow" "1"
+                                            , style "font-size" "16pt"
+                                            , style "margin" "7px 0"
+                                            , style "width" "13ch"
+                                            , type_ "text"
+                                            , maxlength 7
+                                            ] []
+                            , span [ style "margin" "0 10px" ] [ "DIRECTION:" |> text ]
+                                    , button [ onClick (SetDirection (if direction == Down then LeftToRight else Down))
+                                             , style "background-color" "transparent"
                                              , style "font-size" "16pt"
                                              , style "outline" "none"
-                                             ] [ "RTL" |> text ]
-                               ]
+                                             ] [ (if direction == Down then "DOWN" else "LTR") |> text ]
                            ]
                     ]
               ] :: List.indexedMap (\i ts -> div
@@ -209,12 +218,13 @@ view ({board, cursorPos, direction} as model) =
                 ] (List.indexedMap (showTile i) ts)) (getBoard board) ++ [
                   div [ style "width" "100%"
                       , style "max-width" "670px"
-                      , style "font-size" "12pt"
+                      , style "font-size" "16pt"
                       ] [ div [ style "display" "flex"
                             , style "align-items" "center"
                             , style "margin-top" "10px"
                             ] [ span [ ] [ "EMAIL: " |> text ]
-                              , input [ style "margin" "7px 0"
+                              , input [ onInput SetEmail
+                                      , style "margin" "7px 0"
                                       , style "font-size" "16pt"
                                       , style "width" "10ch"
                                       , style "flex-grow" "1"
