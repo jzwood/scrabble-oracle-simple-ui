@@ -5,7 +5,8 @@ import Html exposing (Html, button, div, text, Attribute, Html, button, div, spa
 import Html.Attributes exposing (style, class, tabindex, maxlength, type_)
 import Html.Events exposing (on, preventDefaultOn, onClick, keyCode, onInput)
 import List.Extra exposing (getAt, setAt)
-import Json.Decode as Json
+import Json.Decode as Decode
+import Json.Encode as Encode
 import List
 import Maybe
 
@@ -26,6 +27,7 @@ type Tile = Tile { letter: Maybe Char, color: String }
 type Board = Board (List (List Tile))
 type Direction = LeftToRight | Down
 type Cursor = Cursor (Int, Int)
+type Loading = Idle | Loading | Failure String | Success String
 
 type alias Model =
   { board : Board
@@ -33,7 +35,7 @@ type alias Model =
   , cursorPos : Cursor
   , direction : Direction
   , email : String
-  , loading: Bool
+  , loading: Loading
   }
 
 baseBoard : List String
@@ -76,18 +78,22 @@ init =
   , cursorPos = Cursor (7, 7)
   , direction = LeftToRight
   , email = ""
-  , loading = False
+  , loading = Loading
   }
 
 -- UPDATE
 onKeyDown : (Int -> Msg) -> Attribute Msg
 onKeyDown letterConstructor =
-  preventDefaultOn "keydown" (Json.map alwaysPreventDefault (Json.map letterConstructor keyCode))
+  preventDefaultOn "keydown" (Decode.map alwaysPreventDefault (Decode.map letterConstructor keyCode))
 
 alwaysPreventDefault : msg -> (msg, Bool)
 alwaysPreventDefault msg = (msg, True)
 
-type Msg = SetDirection Direction | SetCursor Cursor | SetLetter Int | SetRack String | SetEmail String
+type Msg = SetDirection Direction
+  | SetCursor Cursor
+  | SetLetter Int
+  | SetRack String
+  | SetEmail String
 
 updateTile : Char -> Tile -> Tile
 updateTile c (Tile ({ letter, color } as tile)) = Tile { tile | letter = (if c == ' ' then letter else Just c) }
