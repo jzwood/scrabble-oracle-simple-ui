@@ -4,6 +4,7 @@ import Browser
 import Html exposing (Html, button, div, text, Attribute, Html, button, div, span, text, ul, li, p, input, hr, h2, h3, h4, strong)
 import Html.Attributes exposing (style, class, tabindex, maxlength, type_)
 import Html.Events exposing (on, preventDefaultOn, onClick, keyCode, onInput)
+import Http exposing (..)
 import List.Extra exposing (getAt, setAt)
 import Json.Decode as Decode
 import Json.Encode as Encode
@@ -11,9 +12,10 @@ import List
 import Maybe
 
 
-main = Browser.sandbox
+main = Browser.element
   { init = init
   , update = update
+  , subscriptions = subscriptions
   , view = view
   }
 
@@ -37,6 +39,23 @@ type alias Model =
   , email : String
   , loading: Loading
   }
+
+scheduleTask : Board -> String -> String -> Cmd Msg
+scheduleTask board rack email =
+  let
+    data : Encode.Value
+    data = Encode.object
+        [ ( "board", Encode.string "WD_POYL_PPPPP______OWHF________________FOOT___________L_ROBS_________OPLM_OPI_____L_GPSM_________A_G____________PRIM_____________N______________G____UIO______MSYWO___OPOP___WGEHRKSNUI__FGHUNJDYEYHUUU_______MNBVG___ASD________" )
+        , ( "rack", Encode.string "ERUDHFO" )
+        , ( "rcpt", Encode.string "jzwood14@yahoo.com" )
+        ]
+  in
+    Http.post
+      { url = "https://scrabble-oracle-api.herokuapp.com/ask-the-scrabble-oracle"
+      , body = data |> Http.jsonBody
+      , expect = Http.expectString TaskScheduled
+      }
+
 
 baseBoard : List String
 baseBoard =
@@ -71,15 +90,15 @@ charToTile c =
 initBoard : Board
 initBoard = Board (List.map (List.map charToTile << String.toList) baseBoard)
 
-init : Model
-init =
-  { board = initBoard
+init : () -> (Model, Cmd Msg)
+init _ =
+  ({ board = initBoard
   , rack = ""
   , cursorPos = Cursor (7, 7)
   , direction = LeftToRight
   , email = ""
-  , loading = Loading
-  }
+  , loading = Idle
+  }, Cmd.none)
 
 -- UPDATE
 onKeyDown : (Int -> Msg) -> Attribute Msg
@@ -94,6 +113,8 @@ type Msg = SetDirection Direction
   | SetLetter Int
   | SetRack String
   | SetEmail String
+  | ScheduleTask
+  | TaskScheduled (Result Http.Error String)
 
 updateTile : Char -> Tile -> Tile
 updateTile c (Tile ({ letter, color } as tile)) = Tile { tile | letter = (if c == ' ' then letter else Just c) }
@@ -128,29 +149,53 @@ updateBoard (Cursor (x, y)) c (Board board) =
               Board newBoard
   else Board board
 
-update : Msg -> Model -> Model
-update msg ({ board, cursorPos, direction } as model) =
+update : Msg -> Model -> (Model, Cmd Msg)
+update msg ({ board, cursorPos, direction, loading, rack, email } as model) =
   case msg of
-    SetCursor cursor -> { model | cursorPos = cursor }
+    SetCursor cursor -> ({ model | cursorPos = cursor }, Cmd.none)
     SetLetter charCode ->
       let
           chr = Char.fromCode charCode
       in
-        { model |
+        ({ model |
           board = updateBoard cursorPos chr board,
           cursorPos =
             if Char.isAlpha chr || chr == ' '
             then updateCursor cursorPos direction
             else cursorPos
-        }
-    SetDirection dir -> { model | direction = dir }
-    SetRack value -> { model | rack = String.toUpper value }
-    SetEmail value -> { model | email = value }
+        }, Cmd.none)
+    SetDirection dir -> ({ model | direction = dir }, Cmd.none)
+    SetRack value -> ({ model | rack = String.toUpper value }, Cmd.none)
+    SetEmail value -> ({ model | email = value }, Cmd.none)
+    ScheduleTask -> (model, scheduleTask board rack email)
+    TaskScheduled result ->
+      case result of
+        Ok message ->
+          ({model | loading = Success message}, Cmd.none)
+        Err err ->
+          case err of
+            BadUrl url ->
+              ({model | loading = Failure <| "URL IS WRONG: " ++ url}, Cmd.none)
+            Timeout ->
+              ({model | loading = Failure "TIMEOUT!" }, Cmd.none)
+            NetworkError ->
+              ({model | loading = Failure "NETWORKING ERROR!" }, Cmd.none)
+            BadStatus status  ->
+              ({model | loading = Failure <| "UNEXPECTED STATUS: " ++ String.fromInt status }, Cmd.none)
+            BadBody body ->
+              ({model | loading = Failure <| "BAD BODY: " ++ body }, Cmd.none)
+
+
+-- SUBSCRIPTIONS
+
+subscriptions : Model -> Sub Msg
+subscriptions model =
+  Sub.none
 
 -- VIEW
 
 view : Model -> Html Msg
-view ({board, cursorPos, direction} as model) =
+view ({board, cursorPos, direction, loading} as model) =
   let
       size = "calc((100vw - 4px) / 15)"
       maxSize = "45px"
@@ -178,6 +223,19 @@ view ({board, cursorPos, direction} as model) =
             , style "background-color" (if letter == Nothing then color else "rgb(255, 242, 203)")
             , style "font-size" "calc(14px + 1vw)"
             ] [ Maybe.withDefault ' ' letter |> String.fromChar |> text ]
+
+      showLoader : Html Msg
+      showLoader =
+        let
+            message : String
+            message =
+              case loading of
+                Idle -> "WAITING…"
+                Failure msg -> "ERROR: " ++ msg
+                Success msg -> "SUCCESS: " ++ msg
+                Loading -> "LOADING"
+        in
+          div [] [ message |> text ]
   in
     div [ style "display" "flex"
         , style "flex-direction" "column"
@@ -236,12 +294,15 @@ view ({board, cursorPos, direction} as model) =
                                       , style "flex-grow" "1"
                                       , type_ "text"
                                       ] []
-                              , button [ style "background-color" "transparent"
+                              , button [ onClick ScheduleTask
+                                       , style "background-color" "transparent"
                                        , style "outline" "none"
                                        , style "font-size" "16pt"
                                        , style "margin-left" "7px"
                                        ] [ "GET BEST WORD" |> text ]
                               ]
+                              , hr [] []
+                              , showLoader
                             ]
                         ]
                       )
