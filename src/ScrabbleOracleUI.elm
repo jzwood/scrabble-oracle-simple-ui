@@ -45,9 +45,9 @@ scheduleTask board rack email =
   let
     data : Encode.Value
     data = Encode.object
-        [ ( "board", Encode.string "WD_POYL_PPPPP______OWHF________________FOOT___________L_ROBS_________OPLM_OPI_____L_GPSM_________A_G____________PRIM_____________N______________G____UIO______MSYWO___OPOP___WGEHRKSNUI__FGHUNJDYEYHUUU_______MNBVG___ASD________" )
-        , ( "rack", Encode.string "ERUDHFO" )
-        , ( "rcpt", Encode.string "jzwood14@yahoo.com" )
+        [ ( "board", Encode.string <| boardToString board)
+        , ( "rack", Encode.string rack )
+        , ( "rcpt", Encode.string email )
         ]
   in
     Http.post
@@ -86,6 +86,17 @@ charToTile c =
     '_' -> Tile { letter = Nothing, color = "#cdc3a5" }
     _ -> Tile { letter = Just c, color = "#cdc3a5" }
 
+tileToChar : Tile -> Char
+tileToChar (Tile { letter }) =
+  case letter of
+    Nothing -> '_'
+    Just char -> Char.toUpper char
+
+boardToString : Board -> String
+boardToString (Board board) = List.concat board |> List.map tileToChar |> String.fromList
+
+isBoardEmpty : Board -> Bool
+isBoardEmpty (Board board) = List.concat board |> List.all (\(Tile { letter }) -> letter == Nothing)
 
 initBoard : Board
 initBoard = Board (List.map (List.map charToTile << String.toList) baseBoard)
@@ -167,7 +178,10 @@ update msg ({ board, cursorPos, direction, loading, rack, email } as model) =
     SetDirection dir -> ({ model | direction = dir }, Cmd.none)
     SetRack value -> ({ model | rack = String.toUpper value }, Cmd.none)
     SetEmail value -> ({ model | email = value }, Cmd.none)
-    ScheduleTask -> (model, scheduleTask board rack email)
+    ScheduleTask -> if String.length rack /= 7 then ({model | loading = Failure "RACK MUST HAVE 7 LETTERS"}, Cmd.none)
+                    else if not (String.contains "@" email && String.contains "." email) then ({ model | loading = Failure "EMAIL MUST BE VALID"}, Cmd.none)
+                    else if isBoardEmpty board then ({model | loading = Failure "BOARD MUST HAVE ≥ 1 LETTER." }, Cmd.none)
+                    else (model, scheduleTask board rack email)
     TaskScheduled result ->
       case result of
         Ok message ->
@@ -230,7 +244,7 @@ view ({board, cursorPos, direction, loading} as model) =
             message : String
             message =
               case loading of
-                Idle -> "WAITING…"
+                Idle -> ""
                 Failure msg -> "ERROR: " ++ msg
                 Success msg -> "SUCCESS: " ++ msg
                 Loading -> "LOADING"
@@ -245,16 +259,13 @@ view ({board, cursorPos, direction, loading} as model) =
           div [ style "width" "100%"
               , style "max-width" "670px"
               ]
-              [ span [ style "font-size" "calc(16pt + 3vw)"
-                     ] [ "Scrabble Oracle" |> text ]
-              , span [ style "font-size" "16px"
-                     , style "padding" "0 10px"
-                     , style "white-space" "nowrap"
-                     ] [ "find the highest scoring word" |> text ]
+              [ div [ style "font-size" "calc(16pt + 3vw)"
+                     ] [ "Scrabble Oracle" |> text ]
               , ul [ style "font-size" "16pt"
                    , style "padding-left" "0"
                    , style "list-style" "none"
-                   ] [ li [ style "" "" ] [ "Recreate your board by clicking on any tile then start typing" |> text ]
+                   ] [ li [] [ "Discover the highest scoring word!" |> text ]
+                     , li [] [ "Recreate your board by clicking on any tile then start typing" |> text ]
                      , li [] [ hr [] [] ]
                      , li [ style "display" "flex"
                           , style "justify-content" "space-between"
