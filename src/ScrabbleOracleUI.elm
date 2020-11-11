@@ -2,7 +2,7 @@ module ScrabbleOracleUI exposing (..)
 
 import Browser
 import Html exposing (Html, button, div, text, Attribute, Html, button, div, span, text, ul, li, p, input, hr, h2, h3, h4, strong)
-import Html.Attributes exposing (style, class, tabindex, maxlength, type_)
+import Html.Attributes exposing (style, class, tabindex, maxlength, disabled, type_)
 import Html.Events exposing (on, preventDefaultOn, onClick, keyCode, onInput)
 import Http exposing (..)
 import List.Extra exposing (getAt, setAt)
@@ -127,26 +127,43 @@ type Msg = SetDirection Direction
   | ScheduleTask
   | TaskScheduled (Result Http.Error String)
 
-updateTile : Char -> Tile -> Tile
-updateTile c (Tile ({ letter, color } as tile)) = Tile { tile | letter = (if c == ' ' then letter else Just c) }
+updateTile : Int -> Tile -> Tile
+updateTile charCode (Tile ({ letter, color } as tile)) =
+  case charCode of
+    8 -> Tile { tile | letter = Nothing }
+    32 -> Tile tile
+    _ ->  Tile { tile | letter = Just (Char.fromCode charCode) }
 
-updateCursor : Cursor -> Direction -> Cursor
-updateCursor (Cursor (x, y)) dir =
-  case dir of
-    LeftToRight -> if y == 14
+updateCursor : Cursor -> Direction -> Bool -> Cursor
+updateCursor (Cursor (x, y)) dir isBackSpace=
+  case (dir, isBackSpace) of
+    (LeftToRight, False) -> if y == 14
       then
-        Cursor (remainderBy 15 (x + 1), 0)
+        Cursor (modBy 15 (x + 1), 0)
       else
         Cursor (x, y + 1)
-    Down -> if x == 14
+    (LeftToRight, True) -> if y == 0
       then
-        Cursor (0, remainderBy 15 (y + 1))
+        Cursor (modBy 15 (x - 1), 14)
+      else
+        Cursor (x, y - 1)
+    (Down, False) -> if x == 14
+      then
+        Cursor (0, modBy 15 (y + 1))
       else
         Cursor (x + 1, y)
+    (Down, True) -> if x == 0
+      then
+        Cursor (14, modBy 15 (y - 1))
+      else
+        Cursor (x - 1, y)
 
-updateBoard : Cursor -> Char -> Board -> Board
-updateBoard (Cursor (x, y)) c (Board board) =
-  if Char.isAlpha c || c == ' ' then
+updateBoard : Cursor -> Int -> Board -> Board
+updateBoard (Cursor (x, y)) charCode (Board board) =
+  let
+    c = Char.fromCode charCode
+  in
+  if Char.isAlpha c || c == ' ' || charCode == 8 then
     case getAt x board of
       Nothing -> Board board
       Just rowX ->
@@ -154,7 +171,7 @@ updateBoard (Cursor (x, y)) c (Board board) =
           Nothing -> Board board
           Just tile ->
             let
-              newRowX = setAt y (updateTile c tile) rowX
+              newRowX = setAt y (updateTile charCode tile) rowX
               newBoard = setAt x newRowX board
             in
               Board newBoard
@@ -166,13 +183,18 @@ update msg ({ board, cursorPos, direction, loading, rack, email } as model) =
     SetCursor cursor -> ({ model | cursorPos = cursor }, Cmd.none)
     SetLetter charCode ->
       let
-          chr = Char.fromCode charCode
+          mergedCharCode =
+            case charCode of
+              9 -> 32 -- 9 is tab and 32 is space
+              13 -> 32 -- 13 is enter
+              _ -> charCode
+          chr = Char.fromCode mergedCharCode
       in
         ({ model |
-          board = updateBoard cursorPos chr board,
+          board = updateBoard cursorPos mergedCharCode board,
           cursorPos =
-            if Char.isAlpha chr || chr == ' '
-            then updateCursor cursorPos direction
+            if Char.isAlpha chr || chr == ' ' || charCode == 8 -- backspace
+            then updateCursor cursorPos direction (charCode == 8)
             else cursorPos
         }, Cmd.none)
     SetDirection dir -> ({ model | direction = dir }, Cmd.none)
@@ -181,7 +203,7 @@ update msg ({ board, cursorPos, direction, loading, rack, email } as model) =
     ScheduleTask -> if String.length rack /= 7 then ({model | loading = Failure "RACK MUST HAVE 7 LETTERS"}, Cmd.none)
                     else if not (String.contains "@" email && String.contains "." email) then ({ model | loading = Failure "EMAIL MUST BE VALID"}, Cmd.none)
                     else if isBoardEmpty board then ({model | loading = Failure "BOARD MUST HAVE ≥ 1 LETTER." }, Cmd.none)
-                    else (model, scheduleTask board rack email)
+                    else ({ model | loading = Loading }, scheduleTask board rack email)
     TaskScheduled result ->
       case result of
         Ok message ->
@@ -214,6 +236,11 @@ view ({board, cursorPos, direction, loading} as model) =
       size = "calc((100vw - 4px) / 15)"
       maxSize = "45px"
       getBoard (Board a) = a
+      hideSubmitButton : Bool
+      hideSubmitButton =
+        case loading of
+          Success _ -> True
+          _ -> False
       showTile : Int -> Int -> Tile -> Html Msg
       showTile x y (Tile { letter, color}) =
         let
@@ -246,7 +273,7 @@ view ({board, cursorPos, direction, loading} as model) =
               case loading of
                 Idle -> ""
                 Failure msg -> "ERROR: " ++ msg
-                Success msg -> "SUCCESS: " ++ msg
+                Success msg -> "SUCCESS: Expect for an email from Scrabble Oracle in a few minutes!"
                 Loading -> "LOADING"
         in
           div [] [ message |> text ]
@@ -306,6 +333,7 @@ view ({board, cursorPos, direction, loading} as model) =
                                       , type_ "text"
                                       ] []
                               , button [ onClick ScheduleTask
+                                       , disabled hideSubmitButton
                                        , style "background-color" "transparent"
                                        , style "outline" "none"
                                        , style "font-size" "16pt"

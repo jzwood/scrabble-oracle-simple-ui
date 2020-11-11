@@ -6,5 +6,6 @@ This Elm app comprised the UI for the [Scrabble Oracle Web App](https://github.c
 ## Local Dev
 ```shell
 $ yarn install
-$ yarn dev
+$ yarn dev  # for dev
+$ yarn build  # for production
 ```

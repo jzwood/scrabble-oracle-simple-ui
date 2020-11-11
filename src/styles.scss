@@ -1,0 +1,26 @@
+button:hover {
+  cursor: pointer;
+  background-color: #F3F3F3 !important;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+.container {
+  width: 100%;
+  max-width: 670px;
+  font-size: 12pt;
+  font-family: sans-serif;
+  font-size: 12pt;
+  margin: 0 auto;
+
+  h2 {
+    font-weight: bold;
+    margin-top: 50px;
+  }
+}
+
+p {
+  line-height: 1.1em;
+}
