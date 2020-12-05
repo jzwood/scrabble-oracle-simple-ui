@@ -1,8 +1,8 @@
 module ScrabbleOracleUI exposing (..)
 
 import Browser
-import Html exposing (Html, button, div, text, Attribute, Html, button, div, span, text, ul, li, p, input, hr, h2, h3, h4, strong)
-import Html.Attributes exposing (style, class, tabindex, maxlength, disabled, type_)
+import Html exposing (Html, button, div, a, text, Attribute, Html, button, div, span, text, ul, li, p, input, hr, h2, h3, h4, strong)
+import Html.Attributes exposing (target, href, style, class, tabindex, maxlength, disabled, type_)
 import Html.Events exposing (on, preventDefaultOn, onClick, keyCode, onInput)
 import Http exposing (..)
 import List.Extra exposing (getAt, setAt)
@@ -10,6 +10,7 @@ import Json.Decode as Decode
 import Json.Encode as Encode
 import List
 import Maybe
+import Time
 
 
 main = Browser.element
@@ -30,32 +31,40 @@ type Board = Board (List (List Tile))
 type Direction = LeftToRight | Down
 type Cursor = Cursor (Int, Int)
 type Loading = Idle | Loading | Failure String | Success String
+type alias BestPlay = { newBoard: String, word: String, score: Int }
 
 type alias Model =
   { board : Board
   , rack : String
   , cursorPos : Cursor
   , direction : Direction
-  , email : String
   , loading: Loading
+  , maybeEndpoint : Maybe String
+  , maybeBestPlay : Maybe BestPlay
   }
 
-scheduleTask : Board -> String -> String -> Cmd Msg
-scheduleTask board rack email =
+scheduleTask : Board -> String -> Cmd Msg
+scheduleTask board rack =
   let
     data : Encode.Value
     data = Encode.object
         [ ( "board", Encode.string <| boardToString board)
         , ( "rack", Encode.string rack )
-        , ( "rcpt", Encode.string email )
         ]
   in
     Http.post
-      { url = "https://scrabble-oracle-api.herokuapp.com/ask-the-scrabble-oracle"
+      --{ url = "https://scrabble-oracle-api.herokuapp.com/ask-the-scrabble-oracle"
+      { url = "http://localhost:3000/tell-the-scrabble-oracle"
       , body = data |> Http.jsonBody
       , expect = Http.expectString TaskScheduled
       }
 
+bestPlayDecoder : Decode.Decoder BestPlay
+bestPlayDecoder =
+  Decode.map3 BestPlay
+    (Decode.field "newBoard" Decode.string)
+    (Decode.field "word" Decode.string)
+    (Decode.field "score" Decode.int)
 
 baseBoard : List String
 baseBoard =
@@ -107,8 +116,9 @@ init _ =
   , rack = ""
   , cursorPos = Cursor (7, 7)
   , direction = LeftToRight
-  , email = ""
   , loading = Idle
+  , maybeEndpoint = Nothing
+  , maybeBestPlay = Nothing
   }, Cmd.none)
 
 -- UPDATE
@@ -123,9 +133,10 @@ type Msg = SetDirection Direction
   | SetCursor Cursor
   | SetLetter Int
   | SetRack String
-  | SetEmail String
   | ScheduleTask
   | TaskScheduled (Result Http.Error String)
+  | BestPlayResponse (Result Http.Error BestPlay)
+  | Tick Time.Posix
 
 updateTile : Int -> Tile -> Tile
 updateTile charCode (Tile ({ letter, color } as tile)) =
@@ -178,7 +189,7 @@ updateBoard (Cursor (x, y)) charCode (Board board) =
   else Board board
 
 update : Msg -> Model -> (Model, Cmd Msg)
-update msg ({ board, cursorPos, direction, loading, rack, email } as model) =
+update msg ({ board, cursorPos, direction, loading, rack, maybeEndpoint } as model) =
   case msg of
     SetCursor cursor -> ({ model | cursorPos = cursor }, Cmd.none)
     SetLetter charCode ->
@@ -199,15 +210,19 @@ update msg ({ board, cursorPos, direction, loading, rack, email } as model) =
         }, Cmd.none)
     SetDirection dir -> ({ model | direction = dir }, Cmd.none)
     SetRack value -> ({ model | rack = String.toUpper value }, Cmd.none)
-    SetEmail value -> ({ model | email = value }, Cmd.none)
     ScheduleTask -> if String.length rack /= 7 then ({model | loading = Failure "RACK MUST HAVE 7 LETTERS"}, Cmd.none)
-                    else if not (String.contains "@" email && String.contains "." email) then ({ model | loading = Failure "EMAIL MUST BE VALID"}, Cmd.none)
                     else if isBoardEmpty board then ({model | loading = Failure "BOARD MUST HAVE ≥ 1 LETTER." }, Cmd.none)
-                    else ({ model | loading = Loading }, scheduleTask board rack email)
+                    else ({ model | loading = Loading }, scheduleTask board rack)
+    Tick time -> case maybeEndpoint of
+      Nothing -> (model, Cmd.none)
+      Just endpoint -> (model, Http.get
+        { url = "http://" ++ endpoint
+        , expect = Http.expectJson BestPlayResponse bestPlayDecoder
+        })
     TaskScheduled result ->
       case result of
-        Ok message ->
-          ({model | loading = Success message}, Cmd.none)
+        Ok url ->
+          ({model | loading = Success url, maybeEndpoint = Just url }, Cmd.none)
         Err err ->
           case err of
             BadUrl url ->
@@ -220,27 +235,25 @@ update msg ({ board, cursorPos, direction, loading, rack, email } as model) =
               ({model | loading = Failure <| "UNEXPECTED STATUS: " ++ String.fromInt status }, Cmd.none)
             BadBody body ->
               ({model | loading = Failure <| "BAD BODY: " ++ body }, Cmd.none)
-
+    BestPlayResponse result ->
+      case result of
+        Ok bestPlay -> ({model | maybeBestPlay = Just bestPlay}, Cmd.none)
+        Err err -> (model, Cmd.none)
 
 -- SUBSCRIPTIONS
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
-  Sub.none
+  Time.every 5000 Tick
 
 -- VIEW
 
 view : Model -> Html Msg
-view ({board, cursorPos, direction, loading} as model) =
+view ({board, cursorPos, direction, loading, maybeBestPlay} as model) =
   let
       size = "calc((100vw - 4px) / 15)"
       maxSize = "45px"
       getBoard (Board a) = a
-      hideSubmitButton : Bool
-      hideSubmitButton =
-        case loading of
-          Success _ -> True
-          _ -> False
       showTile : Int -> Int -> Tile -> Html Msg
       showTile x y (Tile { letter, color}) =
         let
@@ -268,15 +281,22 @@ view ({board, cursorPos, direction, loading} as model) =
       showLoader : Html Msg
       showLoader =
         let
-            message : String
-            message =
-              case loading of
-                Idle -> ""
-                Failure msg -> "ERROR: " ++ msg
-                Success msg -> "SUCCESS: Expect for an email from Scrabble Oracle in a few minutes!"
-                Loading -> "LOADING"
+            showWord = case maybeBestPlay of
+              Nothing -> div [ class "loading" ] ["WORD: ..." |> text ]
+              Just ({ word }) -> div [] [ "WORD: " ++  word |> text ]
+            showScore = case maybeBestPlay of
+              Nothing -> div [ class "loading" ] ["SCORE: ..." |> text ]
+              Just ({ score }) -> div [] [ "SCORE: " ++  String.fromInt score |> text ]
         in
-          div [] [ message |> text ]
+        case loading of
+          Idle -> div [] []
+          Failure msg -> div [] [ "ERROR: " ++ msg |> text ]
+          Loading -> div [] [ "LOADING" |> text ]
+          Success url -> div [] [ span [] [ "SUCCESS: " |> text ]
+                                , a [ href url, target "_blank" ] [ url |> text ]
+                                , showWord
+                                , showScore
+                                ]
   in
     div [ style "display" "flex"
         , style "flex-direction" "column"
@@ -324,20 +344,10 @@ view ({board, cursorPos, direction, loading} as model) =
                       ] [ div [ style "display" "flex"
                             , style "align-items" "center"
                             , style "margin-top" "10px"
-                            ] [ span [ ] [ "EMAIL: " |> text ]
-                              , input [ onInput SetEmail
-                                      , style "margin" "7px 0"
-                                      , style "font-size" "16pt"
-                                      , style "width" "10ch"
-                                      , style "flex-grow" "1"
-                                      , type_ "text"
-                                      ] []
-                              , button [ onClick ScheduleTask
-                                       , disabled hideSubmitButton
+                            ] [ button [ onClick ScheduleTask
                                        , style "background-color" "transparent"
                                        , style "outline" "none"
                                        , style "font-size" "16pt"
-                                       , style "margin-left" "7px"
                                        ] [ "GET BEST WORD" |> text ]
                               ]
                               , hr [] []
