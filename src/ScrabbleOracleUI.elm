@@ -1,7 +1,7 @@
 module ScrabbleOracleUI exposing (..)
 
 import Browser
-import Html exposing (Html, button, div, a, text, Attribute, Html, button, div, span, text, ul, li, p, input, hr, h2, h3, h4, strong)
+import Html exposing (Html, button, pre, div, a, text, Attribute, Html, button, div, span, text, ul, li, p, input, hr, h2, h3, h4, strong)
 import Html.Attributes exposing (target, href, style, class, tabindex, maxlength, disabled, type_)
 import Html.Events exposing (on, preventDefaultOn, onClick, keyCode, onInput)
 import Http exposing (..)
@@ -41,6 +41,7 @@ type alias Model =
   , loading: Loading
   , maybeEndpoint : Maybe String
   , maybeBestPlay : Maybe BestPlay
+  , stopPolling : Bool
   }
 
 scheduleTask : Board -> String -> Cmd Msg
@@ -54,7 +55,7 @@ scheduleTask board rack =
   in
     Http.post
       --{ url = "https://scrabble-oracle-api.herokuapp.com/ask-the-scrabble-oracle"
-      { url = "http://localhost:3000/tell-the-scrabble-oracle"
+      { url = "http://localhost:5000/tell-the-scrabble-oracle"
       , body = data |> Http.jsonBody
       , expect = Http.expectString TaskScheduled
       }
@@ -119,6 +120,7 @@ init _ =
   , loading = Idle
   , maybeEndpoint = Nothing
   , maybeBestPlay = Nothing
+  , stopPolling = False
   }, Cmd.none)
 
 -- UPDATE
@@ -189,7 +191,7 @@ updateBoard (Cursor (x, y)) charCode (Board board) =
   else Board board
 
 update : Msg -> Model -> (Model, Cmd Msg)
-update msg ({ board, cursorPos, direction, loading, rack, maybeEndpoint } as model) =
+update msg ({ board, cursorPos, direction, loading, rack, maybeEndpoint, stopPolling } as model) =
   case msg of
     SetCursor cursor -> ({ model | cursorPos = cursor }, Cmd.none)
     SetLetter charCode ->
@@ -213,16 +215,18 @@ update msg ({ board, cursorPos, direction, loading, rack, maybeEndpoint } as mod
     ScheduleTask -> if String.length rack /= 7 then ({model | loading = Failure "RACK MUST HAVE 7 LETTERS"}, Cmd.none)
                     else if isBoardEmpty board then ({model | loading = Failure "BOARD MUST HAVE ≥ 1 LETTER." }, Cmd.none)
                     else ({ model | loading = Loading }, scheduleTask board rack)
-    Tick time -> case maybeEndpoint of
-      Nothing -> (model, Cmd.none)
-      Just endpoint -> (model, Http.get
+    Tick time ->
+      if stopPolling then (model, Cmd.none) else
+      case (loading, maybeEndpoint) of
+      (Success _, Just endpoint) -> (model, Http.get
         { url = "http://" ++ endpoint
         , expect = Http.expectJson BestPlayResponse bestPlayDecoder
         })
+      _ -> (model, Cmd.none)
     TaskScheduled result ->
       case result of
         Ok url ->
-          ({model | loading = Success url, maybeEndpoint = Just url }, Cmd.none)
+          ({model | loading = Success url, stopPolling = False, maybeBestPlay = Nothing, maybeEndpoint = Just url }, Cmd.none)
         Err err ->
           case err of
             BadUrl url ->
@@ -237,7 +241,7 @@ update msg ({ board, cursorPos, direction, loading, rack, maybeEndpoint } as mod
               ({model | loading = Failure <| "BAD BODY: " ++ body }, Cmd.none)
     BestPlayResponse result ->
       case result of
-        Ok bestPlay -> ({model | maybeBestPlay = Just bestPlay}, Cmd.none)
+        Ok bestPlay -> ({model | stopPolling = True, maybeBestPlay = Just bestPlay}, Cmd.none)
         Err err -> (model, Cmd.none)
 
 -- SUBSCRIPTIONS
@@ -278,24 +282,37 @@ view ({board, cursorPos, direction, loading, maybeBestPlay} as model) =
             , style "font-size" "calc(14px + 1vw)"
             ] [ Maybe.withDefault ' ' letter |> String.fromChar |> text ]
 
+      showWord : Html Msg
+      showWord = case maybeBestPlay of
+        Nothing -> div [ class "loading" ] ["WORD: ..." |> text ]
+        Just ({ word }) -> div [] [ span [] [ "WORD: " |> text ]
+                                  , pre [ style "display" "inline-block"
+                                        , style "margin" "0" ] [ word |> text ]
+                                  ]
+      showScore : Html Msg
+      showScore = case maybeBestPlay of
+        Nothing -> div [ class "loading" ] ["SCORE: ..." |> text ]
+        Just ({ score }) -> div [] [ span [] [ "SCORE: " |> text ]
+                                  , pre [ style "display" "inline-block"
+                                        , style "margin" "0" ] [ String.fromInt score |> text ]
+                                  ]
+      showBoard : Html Msg
+      showBoard = case maybeBestPlay of
+        Nothing -> div [ class "loading" ] ["BOARD: ..." |> text ]
+        Just ({ newBoard }) -> div [ style "display" "flex" ] [ span [] [ "BOARD: " |> text ]
+                                  , pre [ style "display" "inline-block"
+                                        , style "margin" "0" ] [ newBoard |> text ]
+                                  ]
       showLoader : Html Msg
       showLoader =
-        let
-            showWord = case maybeBestPlay of
-              Nothing -> div [ class "loading" ] ["WORD: ..." |> text ]
-              Just ({ word }) -> div [] [ "WORD: " ++  word |> text ]
-            showScore = case maybeBestPlay of
-              Nothing -> div [ class "loading" ] ["SCORE: ..." |> text ]
-              Just ({ score }) -> div [] [ "SCORE: " ++  String.fromInt score |> text ]
-        in
         case loading of
           Idle -> div [] []
           Failure msg -> div [] [ "ERROR: " ++ msg |> text ]
           Loading -> div [] [ "LOADING" |> text ]
           Success url -> div [] [ span [] [ "SUCCESS: " |> text ]
-                                , a [ href url, target "_blank" ] [ url |> text ]
                                 , showWord
                                 , showScore
+                                , showBoard
                                 ]
   in
     div [ style "display" "flex"
