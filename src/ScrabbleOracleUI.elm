@@ -54,8 +54,7 @@ scheduleTask board rack =
         ]
   in
     Http.post
-      --{ url = "https://scrabble-oracle-api.herokuapp.com/ask-the-scrabble-oracle"
-      { url = "http://localhost:5000/tell-the-scrabble-oracle"
+      { url = "https://scrabble-oracle-api.herokuapp.com/tell-the-scrabble-oracle"
       , body = data |> Http.jsonBody
       , expect = Http.expectString TaskScheduled
       }
@@ -219,7 +218,7 @@ update msg ({ board, cursorPos, direction, loading, rack, maybeEndpoint, stopPol
       if stopPolling then (model, Cmd.none) else
       case (loading, maybeEndpoint) of
       (Success _, Just endpoint) -> (model, Http.get
-        { url = "http://" ++ endpoint
+        { url = endpoint
         , expect = Http.expectJson BestPlayResponse bestPlayDecoder
         })
       _ -> (model, Cmd.none)
@@ -284,14 +283,16 @@ view ({board, cursorPos, direction, loading, maybeBestPlay} as model) =
 
       showWord : Html Msg
       showWord = case maybeBestPlay of
-        Nothing -> div [ class "loading" ] ["WORD: ..." |> text ]
+        Nothing -> div [ class "loading" ] [ span [] ["WORD: ..." |> text]
+                                           , span [] []
+                                           ]
         Just ({ word }) -> div [] [ span [] [ "WORD: " |> text ]
                                   , pre [ style "display" "inline-block"
                                         , style "margin" "0" ] [ word |> text ]
                                   ]
       showScore : Html Msg
       showScore = case maybeBestPlay of
-        Nothing -> div [ class "loading" ] ["SCORE: ..." |> text ]
+        Nothing -> div [ class "loading" ] [ "SCORE: ..." |> text ]
         Just ({ score }) -> div [] [ span [] [ "SCORE: " |> text ]
                                   , pre [ style "display" "inline-block"
                                         , style "margin" "0" ] [ String.fromInt score |> text ]
