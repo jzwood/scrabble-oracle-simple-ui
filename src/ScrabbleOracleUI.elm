@@ -20,6 +20,9 @@ main = Browser.element
   , view = view
   }
 
+-- URLS
+oracleURL = "https://scrabble-oracle-api.herokuapp.com/tell-the-scrabble-oracle"
+
 -- MODEL
 
 type alias RowLabel = String
@@ -54,7 +57,7 @@ scheduleTask board rack =
         ]
   in
     Http.post
-      { url = "https://scrabble-oracle-api.herokuapp.com/tell-the-scrabble-oracle"
+      { url = oracleURL
       , body = data |> Http.jsonBody
       , expect = Http.expectString TaskScheduled
       }
@@ -281,36 +284,48 @@ view ({board, cursorPos, direction, loading, maybeBestPlay} as model) =
             , style "font-size" "calc(14px + 1vw)"
             ] [ Maybe.withDefault ' ' letter |> String.fromChar |> text ]
 
+      showLoadingDots : Html Msg
+      showLoadingDots = span [ class "loading "] [ span [] [ "." |> text ]
+                                                 , span [] [ "." |> text ]
+                                                 , span [] [ "." |> text ]
+                                                 ]
+
       showWord : Html Msg
       showWord = case maybeBestPlay of
-        Nothing -> div [ class "loading" ] [ span [] ["WORD: ..." |> text]
-                                           , span [] []
-                                           ]
+        Nothing -> div [ ] [ "WORD: " |> text
+                           , showLoadingDots
+                           ]
         Just ({ word }) -> div [] [ span [] [ "WORD: " |> text ]
                                   , pre [ style "display" "inline-block"
                                         , style "margin" "0" ] [ word |> text ]
                                   ]
       showScore : Html Msg
       showScore = case maybeBestPlay of
-        Nothing -> div [ class "loading" ] [ "SCORE: ..." |> text ]
+        Nothing -> div [ ] [ "SCORE: " |> text
+                           , showLoadingDots
+                           ]
         Just ({ score }) -> div [] [ span [] [ "SCORE: " |> text ]
-                                  , pre [ style "display" "inline-block"
-                                        , style "margin" "0" ] [ String.fromInt score |> text ]
-                                  ]
+                                   , pre [ style "display" "inline-block"
+                                         , style "margin" "0" ] [ String.fromInt score |> text ]
+                                   ]
       showBoard : Html Msg
       showBoard = case maybeBestPlay of
-        Nothing -> div [ class "loading" ] ["BOARD: ..." |> text ]
+        Nothing -> div [ ] [ "BOARD: " |> text
+                           , showLoadingDots
+                           ]
         Just ({ newBoard }) -> div [ style "display" "flex" ] [ span [] [ "BOARD: " |> text ]
-                                  , pre [ style "display" "inline-block"
-                                        , style "margin" "0" ] [ newBoard |> text ]
-                                  ]
+                                   , pre [ style "display" "inline-block"
+                                         , style "margin" "0" ] [ newBoard |> text ]
+                                   ]
       showLoader : Html Msg
       showLoader =
         case loading of
           Idle -> div [] []
           Failure msg -> div [] [ "ERROR: " ++ msg |> text ]
-          Loading -> div [] [ "LOADING" |> text ]
-          Success url -> div [] [ span [] [ "SUCCESS: " |> text ]
+          Loading -> div [] [ "WAITING FOR SERVER" |> text
+                            , showLoadingDots
+                            ]
+          Success url -> div [] [ span [] [ "SERVER CONNECTED" |> text ]
                                 , showWord
                                 , showScore
                                 , showBoard
